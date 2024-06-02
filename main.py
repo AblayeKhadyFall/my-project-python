@@ -1,78 +1,100 @@
-from notification_strategy import EmailNotificationStrategy, SMSNotificationStrategy, PushNotificationStrategy
-from email_notification_strategy import EmailNotificationStrategy
-from projet import Projet
-from membre import Membre
-from tache import Tache
-from risque import Risque
-from jalon import Jalon
-import os
-from datetime import datetime
+import io
+import sys
 from fpdf import FPDF
+from datetime import datetime
+from projet import Projet  # Assurez-vous d'importer votre module correctement
+from email.mime.text import MIMEText
+import smtplib
 
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Rapport de Projet', 0, 1, 'C')
 
-def main():
-    # Créer des membres
-    membre1 = Membre("Alice", "Chef de projet")
-    membre2 = Membre("Bob", "Développeur")
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, title, 0, 1, 'L')
 
-    # Créer un projet
-    projet = Projet("Projet X", "Description du projet X", "2024-01-01", "2024-12-31")
+    def chapter_body(self, body):
+        self.set_font('Arial', '', 12)
+        self.multi_cell(0, 10, body)
+        self.ln()
 
-    # Ajouter des membres à l'équipe
-    projet.ajouter_membre_equipe(membre1)
-    projet.ajouter_membre_equipe(membre2)
+class Tee(io.StringIO):
+    def __init__(self, *files):
+        super().__init__()
+        self.files = files
 
-    # Définir une stratégie de notification
-    projet.set_notification_strategy(EmailNotificationStrategy())
+    def write(self, data):
+        super().write(data)
+        for f in self.files:
+            f.write(data)
 
-    # Créer et ajouter des tâches
-    tache1 = Tache("Tâche 1", "Description de la tâche 1", "2024-01-01", "2024-02-01", membre1, "En cours")
-    tache2 = Tache("Tâche 2", "Description de la tâche 2", "2024-02-01", "2024-03-01", membre2, "Non commencée")
-    #tache1.ajouter_dependance(tache1)
-    tache2.ajouter_dependance(tache1)
-    projet.ajouter_tache(tache1)
-    projet.ajouter_tache(tache2) 
-       
-    # Appel de la méthode pour générer le rapport PDF
-    #projet.generer_rapport_pdf("rapport_projet.pdf")
+class Main:
+    def run(self):
+        # Créer un flux de sortie pour capturer la sortie standard
+        captured_output = io.StringIO()
+        tee = Tee(sys.stdout, captured_output)
+        
+        # Rediriger la sortie standard vers le tee
+        old_stdout = sys.stdout
+        sys.stdout = tee
 
-    # Affichage du projet (facultatif, pour débogage)
-    print(projet)
-    
-    # Créer et ajouter des risques
-    risque1 = Risque("Risque 1", 0.7, "Élevé")
-    risque2 = Risque("Risque 2", 0.8, "Élevé")
-    projet.ajouter_risque(risque1)
-    projet.ajouter_risque(risque2)
+        try:
+            # Initialisation du projet
+            projet = Projet("Projet X", "Description du projet X", datetime(2024, 1, 1), datetime(2024, 12, 31))
 
-    # Créer et ajouter des jalons
-    jalon1 = Jalon("Jalon 1", "2024-06-01")
-    jalon2 = Jalon("Jalon 2", "2024-05-02")
-    projet.ajouter_jalon(jalon1)
-    projet.ajouter_jalon(jalon2)
+            # Ajout de membres d'équipe
+            projet.ajouter_membre("Alice", "Chef de projet")
+            projet.ajouter_membre("Bob", "Développeur")
 
-    # Enregistrer un changement
-    projet.enregistrer_changement("Changement de version 1")
-    projet.enregistrer_changement("Changement de version 2")
+            # Ajout de tâches
+            projet.ajouter_tache("Tâche 1", "Description de la tâche 1", datetime(2024, 1, 1), datetime(2024, 2, 1), "Alice", "En cours")
+            projet.ajouter_tache("Tâche 2", "Description de la tâche 2", datetime(2024, 2, 1), datetime(2024, 3, 1), "Bob", "Non commencée", ["Tâche 1"])
 
-    # Notifier les membres
-    projet.notifier("Message de test", [membre1, membre2])
-    
-    # Afficher les détails du projet
-    projet.afficher_details()
-    
-    # Afficher le chemin critique
-    projet.afficher_chemin_critique()
+            # Ajout de risques
+            projet.ajouter_risque("Risque 1", 0.7, "Élevé")
+            projet.ajouter_risque("Risque 2", 0.8, "Élevé")
 
-    # Générer le rapport PDF
-    projet.generer_rapport_pdf("rapport_projet.pdf")
+            # Ajout de jalons
+            projet.ajouter_jalon("Jalon 1", datetime(2024, 6, 1))
+            projet.ajouter_jalon("Jalon 2", datetime(2024, 5, 2))
 
-    # Vérification de l'existence du fichier PDF
-    if os.path.exists("rapport_projet.pdf"):
-        print("Le rapport PDF a été généré avec succès : rapport_projet.pdf")
-    else:
-         print("Erreur lors de la génération du rapport PDF.")
-         
+            # Ajout de changements
+            projet.ajouter_changement(1, datetime.now())
+            projet.ajouter_changement(2, datetime.now())
+
+            # Calcul du chemin critique
+            chemin_critique = projet.calculer_chemin_critique()
+            print("Chemin critique:", chemin_critique)
+
+            # Envoi des emails
+            projet.envoyer_email("alice@example.com", "Message de test")
+            projet.envoyer_email("bob@example.com", "Message de test")
+
+            # Affichage des informations du projet
+            print(projet)
+        finally:
+            # Restaurer la sortie standard
+            sys.stdout = old_stdout
+
+        # Récupérer le contenu capturé
+        output = captured_output.getvalue()
+
+        # Générer le rapport PDF
+        pdf = PDF()
+        pdf.add_page()
+
+        # Ajouter le contenu capturé au PDF
+        pdf.chapter_title("Rapport de Projet")
+        pdf.chapter_body(output)
+
+        # Enregistrer le PDF
+        pdf_output_path = "rapport_projet.pdf"
+        pdf.output(pdf_output_path)
+
+        print(f"Le rapport PDF a été généré avec succès : {pdf_output_path}")
+
 if __name__ == "__main__":
-    main()
-    
+    main = Main()
+    main.run()

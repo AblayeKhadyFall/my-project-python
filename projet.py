@@ -1,156 +1,105 @@
-from datetime import datetime
-from typing import List
-from notification_context import NotificationContext
-from notification_strategy import NotificationStrategy 
-from tache import Tache
-from equipe import Equipe
-from risque import Risque
-from jalon import Jalon
-from changement import Changement
-from fpdf import FPDF
-from membre import Membre 
-class Projet:
-    def __init__(self, nom: str, description: str, date_debut: str, date_fin: str):
+from datetime import datetime, timedelta
+
+class Tache:
+    def __init__(self, nom, description, date_debut, date_fin, responsable, statut, dependances=None):
         self.nom = nom
         self.description = description
-        self.date_debut = datetime.strptime(date_debut, '%Y-%m-%d')
-        self.date_fin = datetime.strptime(date_fin, '%Y-%m-%d')
+        self.date_debut = date_debut
+        self.date_fin = date_fin
+        self.responsable = responsable
+        self.statut = statut
+        self.dependances = dependances if dependances else []
+
+    def __str__(self):
+        return f"Tâche: {self.nom}, Description: {self.description}, Date de début: {self.date_debut}, Date de fin: {self.date_fin}, Responsable: {self.responsable}, Statut: {self.statut}, Dépendances: {self.dependances}"
+
+
+class Projet:
+    def __init__(self, nom, description, date_debut, date_fin):
+        self.nom = nom
+        self.description = description
+        self.date_debut = date_debut
+        self.date_fin = date_fin
         self.taches = []
-        self.equipe = Equipe()
-        self.budget = 0.0
         self.risques = []
         self.jalons = []
-        self.version = 0
         self.changements = []
-        self.chemin_critique = []
-        self.notification_context = None
+        self.equipe = []
 
-    def set_notification_strategy(self, strategy: NotificationStrategy):
-        self.notification_context = NotificationContext(strategy)
-
-    def ajouter_tache(self, tache: Tache):
+    def ajouter_tache(self, nom, description, date_debut, date_fin, responsable, statut, dependances=None):
+        tache = Tache(nom, description, date_debut, date_fin, responsable, statut, dependances)
         self.taches.append(tache)
 
-    def ajouter_membre_equipe(self, membre: 'Membre'):
-        self.equipe.ajouter_membre(membre)
+    def ajouter_risque(self, nom, probabilite, impact):
+        self.risques.append({'nom': nom, 'probabilite': probabilite, 'impact': impact})
 
-    def definir_budget(self, budget: float):
-        self.budget = budget
+    def ajouter_jalon(self, nom, date):
+        self.jalons.append({'nom': nom, 'date': date})
 
-    def ajouter_risque(self, risque: Risque):
-        self.risques.append(risque)
+    def ajouter_changement(self, version, date):
+        self.changements.append({'version': version, 'date': date})
 
-    def ajouter_jalon(self, jalon: Jalon):
-        self.jalons.append(jalon)
-
-    def enregistrer_changement(self, description: str):
-        self.version += 1
-        changement = Changement(description, self.version, datetime.now())
-        self.changements.append(changement)
-
-    def generer_rapport_performance(self):
-        pass
+    def ajouter_membre(self, nom, role):
+        self.equipe.append({'nom': nom, 'role': role})
 
     def calculer_chemin_critique(self):
-        pass
+        def find_task_by_name(name):
+            for task in self.taches:
+                if task.nom == name:
+                    return task
+            return None
 
-    def notifier(self, message: str, destinataires: List['Membre']):
-        if self.notification_context:
-            self.notification_context.notifier(message, destinataires)
-    def afficher_details(self):
-        print(f"Projet: {self.nom}")
-        print(f"Description: {self.description}")
-        print(f"Date de début: {self.date_debut}")
-        print(f"Date de fin: {self.date_fin}")
-        print(f"Budget: {self.budget}")
-        print(f"Version: {self.version}")
-        print(f"Tâches:")
+        # Calculer les dates de début et de fin au plus tôt
         for tache in self.taches:
-            tache.afficher_details()
-        print(f"Risques:")
-        for risque in self.risques:
-            risque.afficher_details()
-        print(f"Jalons:")
-        for jalon in self.jalons:
-            jalon.afficher_details()
-        print(f"Changements:")
-        for changement in self.changements:
-            changement.afficher_details()
-        print(f"Équipe:")
-        self.equipe.afficher_details()
-        
-    def calculer_chemin_critique(self):
-        # Initialiser les dates au plus tôt et au plus tard
-        for tache in self.taches:
-            tache.date_debut_tot = self.date_debut
+            if not tache.dependances:
+                tache.date_debut_tot = tache.date_debut
+            else:
+                tache.date_debut_tot = max(find_task_by_name(dep).date_fin_tot for dep in tache.dependances)
             tache.date_fin_tot = tache.date_debut_tot + (tache.date_fin - tache.date_debut)
-            tache.date_debut_tard = self.date_fin
-            tache.date_fin_tard = tache.date_debut_tard - (tache.date_fin - tache.date_debut)
 
-        # Calculer les dates au plus tôt
-        for tache in self.taches:
-            for dependance in tache.dependances:
-                if dependance.date_fin_tot > tache.date_debut_tot:
-                    tache.date_debut_tot = dependance.date_fin_tot
-                    tache.date_fin_tot = tache.date_debut_tot + (tache.date_fin - tache.date_debut)
-            print(f"Débogage: Tâche {tache.nom}, Date de début tôt: {tache.date_debut_tot}, Date de fin tôt: {tache.date_fin_tot}")
-
-       
-        # Calculer les dates au plus tard
+        # Calculer les dates de début et de fin au plus tard
         for tache in reversed(self.taches):
-            for dependance in tache.dependances:
-                if dependance.date_debut_tard < tache.date_fin_tard:
-                    tache.date_fin_tard = dependance.date_debut_tard
-                    tache.date_debut_tard = tache.date_fin_tard - (tache.date_fin - tache.date_debut)
-            print(f"Débogage: Tâche {tache.nom}, Date de début tard: {tache.date_debut_tard}, Date de fin tard: {tache.date_fin_tard}")
+            if tache == self.taches[-1]:
+                tache.date_fin_tard = tache.date_fin_tot
+            else:
+                tache.date_fin_tard = min(
+                    (find_task_by_name(dep).date_debut_tard for dep in tache.dependances if find_task_by_name(dep)),
+                    default=tache.date_fin_tot
+                )
+            tache.date_debut_tard = tache.date_fin_tard - (tache.date_fin - tache.date_debut)
 
-        # Identifier les tâches critiques
+        # Déterminer le chemin critique
         chemin_critique = []
         for tache in self.taches:
             if tache.date_debut_tot == tache.date_debut_tard:
-                chemin_critique.append(tache)
+                chemin_critique.append(tache.nom)
 
         return chemin_critique
-    
-    def afficher_chemin_critique(self):
-        chemin_critique = self.calculer_chemin_critique()
-        print("Chemin critique:")
-        for tache in chemin_critique:
-            print(f"  Tâche: {tache.nom}, Date de début: {tache.date_debut_tot}, Date de fin: {tache.date_fin_tot}")
-            
-    def evaluer_risques(self):
-        for risque in self.risques:
-            risque['impact_total'] = risque['probabilite'] * (1 if risque['impact'] == 'Élevé' else 0.5 if risque['impact'] == 'Moyen' else 0.1)
-            self.risques.sort(key=lambda x: x['impact_total'], reverse=True)
 
-    def afficher_risques(self):
-        self.evaluer_risques()
-        print("Risques (priorisés) :")
-        for risque in self.risques:
-            print(f"  Risque: {risque['nom']}, Probabilité: {risque['probabilite']}, Impact: {risque['impact']}, Impact Total: {risque['impact_total']}")
-            
-      #Generer un rapport      
-    def generer_rapport_pdf(self, filename):
-        pdf = FPDF()
-        pdf.add_page()
-        
-        pdf.set_font("Arial", size=12)
-        pdf.cell(200, 10, txt="Rapport du Projet", ln=True, align="C")
-        
-        pdf.cell(200, 10, txt=f"Projet: {self.nom}", ln=True)
-        pdf.cell(200, 10, txt=f"Description: {self.description}", ln=True)
-        pdf.cell(200, 10, txt=f"Date de début: {self.date_debut}", ln=True)
-        pdf.cell(200, 10, txt=f"Date de fin: {self.date_fin}", ln=True)
-        
-        pdf.cell(200, 10, txt="Tâches:", ln=True)
+    def envoyer_email(self, destinataire, message):
+        print(f"Envoi d'un email à {destinataire}: {message}")
+
+    def __str__(self):
+        result = []
+        result.append(f"Projet: {self.nom}")
+        result.append(f"Description: {self.description}")
+        result.append(f"Date de début: {self.date_debut}")
+        result.append(f"Date de fin: {self.date_fin}")
+        result.append(f"Budget: 0.0")  # Ajouter des détails de budget si nécessaire
+        result.append(f"Version: 2")   # Ajouter des détails de version si nécessaire
+        result.append("Tâches:")
         for tache in self.taches:
-            pdf.cell(200, 10, txt=f"  - {tache.nom}: {tache.date_debut} à {tache.date_fin} ({tache.responsable.nom})", ln=True)
-        
-        pdf.output(filename)
-
-
-# Exemple d'utilisation
-projet = Projet("Projet X", "Description du projet X", "2024-01-01", "2024-12-31")
-projet.ajouter_tache(Tache("Tâche 1", "Description de la tâche 1", "2024-01-01", "2024-02-01", Membre("Alice", "Chef de projet"), "En cours"))
-projet.ajouter_tache(Tache("Tâche 2", "Description de la tâche 2", "2024-02-01", "2024-03-01", Membre("Bob", "Développeur"), "Non commencée"))
-projet.generer_rapport_pdf("rapport_projet.pdf")
+            result.append(f"  {tache}")
+        result.append("Risques:")
+        for risque in self.risques:
+            result.append(f"  Risque: {risque['nom']}, Probabilité: {risque['probabilite']}, Impact: {risque['impact']}")
+        result.append("Jalons:")
+        for jalon in self.jalons:
+            result.append(f"  Jalon: {jalon['nom']}, Date: {jalon['date']}")
+        result.append("Changements:")
+        for changement in self.changements:
+            result.append(f"  Changement: Changement de version {changement['version']}, Date: {changement['date']}")
+        result.append("Équipe:")
+        for membre in self.equipe:
+            result.append(f"  Membre: {membre['nom']}, Rôle: {membre['role']}")
+        return "\n".join(result)
